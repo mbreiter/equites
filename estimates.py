@@ -13,7 +13,7 @@ from tiingo import get_data
 from optimize import optimize
 from bl import bl
 from rs import fama_french, regime_switch, current_regime, business_days, expected_returns, covariance
-from sent_analysis import SentimentAnalysis, predict
+# from sent_analysis import SentimentAnalysis, predict
 
 
 def do_regime_switch(R, F, tickers):
@@ -55,13 +55,13 @@ def get_estimates(tickers, prices, factors, mktcap, days, rs=True):
                          q=mu_factor.values,
                          adjust=False)
 
-    # mu_ml = mu_bl1.mul(pd.DataFrame(1 + np.random.uniform(-0.05, 0.1, len(tickers)), index=mu_bl1.index, columns=mu_bl1.columns))
+    mu_ml = mu_bl1.mul(pd.DataFrame(1 + np.random.uniform(-0.05, 0.1, len(tickers)), index=mu_bl1.index, columns=mu_bl1.columns))
 
-    df = pd.DataFrame()
-    df['prices'] = prices.apply(lambda x: ','.join(x.astype(str)), axis=1)
-    df['prices'] = df.prices.apply(lambda x: [float(y) for y in x.split(',')])
-    df.prices = df.prices.apply(lambda x: ast.literal_eval(x))
-    mu_ml = predict(torch.FloatTensor(df['prices'].values.tolist(), check_ml=mu_bl1)
+    # df = pd.DataFrame()
+    # df['prices'] = prices.apply(lambda x: ','.join(x.astype(str)), axis=1)
+    # df['prices'] = df.prices.apply(lambda x: [float(y) for y in x.split(',')])
+    # df.prices = df.prices.apply(lambda x: ast.literal_eval(x))
+    # mu_ml = predict(torch.FloatTensor(df['prices'].values.tolist(), check_ml=mu_bl1)
 
     mu_bl2, cov_bl2 = bl(tickers=tickers,
                          l=l, tau=1,

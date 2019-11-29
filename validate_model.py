@@ -1,8 +1,8 @@
 import os
 
+import matplotlib
 import numpy as np
 import pandas as pd
-
 
 from bl import get_mkt_cap
 from cost import costs
@@ -52,7 +52,11 @@ def do_optimize(mu, cov, alpha, return_target, cost, prices, risk_tolerance):
                          prices=prices.iloc[-2, :].values if prices.iloc[-1, :].isnull().values.any() else prices.iloc[-1, :].values,
                          gamma=risk_tolerance)[0]
 
-    return pd.Series(soln.x[:int(len(mu[0]))], index=mu[0].index)
+    if risk_tolerance[3] == "PARITY":
+        x1 = soln.x[:int(len(mu[0]))]
+        return pd.Series(x1/x1.sum(), index=mu[0].index)
+    else:
+        return pd.Series(soln.x[:int(len(mu[0]))], index=mu[0].index)
 
 
 ## *********************************************************************************************************************
@@ -68,7 +72,7 @@ sample_start = (datetime.now() - relativedelta(years=9)).strftime("%Y-%m-%d")
 
 simulation_end = datetime.now().strftime("%Y-%m-%d")
 
-rs = True
+rs = False
 
 ## *********************************************************************************************************************
 # get price data and factors
@@ -135,14 +139,17 @@ done = False
 ## *********************************************************************************************************************
 # initialize tracking dataframes
 ## *********************************************************************************************************************
-portfolio_values = pd.DataFrame([[1, 1, 1, 1]], index=[prices.index[test_start]], columns=['MCVAR', 'SHARPE', 'MVO', 'N'])
+portfolio_values = pd.DataFrame([[1, 1, 1, 1]], index=[prices.index[test_start]], columns=['MCVAR', 'SHARPE', 'MVO', 'N', 'PARITY'])
 
 MCVAR_holdings = pd.DataFrame(columns=tickers)
 SHARPE_holdings = pd.DataFrame(columns=tickers)
 MVO_holdings = pd.DataFrame(columns=tickers)
 N_holdings = pd.DataFrame(columns=tickers)
+PARITY_holdings = pd.DataFrame(columns=tickers)
 
-while test_start < len(f5) and not done:
+validate = True
+
+while test_start < len(f5) and not done and validate:
     # get the number of days in the testing period ... tests last 6 months
     test_start_date = f5.index[test_start]
     test_days = business_days(f5.index[test_start], f5.index[test_start] + relativedelta(months=6))
@@ -176,7 +183,7 @@ while test_start < len(f5) and not done:
                                                                            target_dollars, l, mu[0], mu[1], cov[0])
 
     # MCVAR optimization
-    risk_tolerance = (multipliers, exposures, [1]*N, 'MCVAR')
+    risk_tolerance = (multipliers, exposures, cardinality, 'MCVAR')
     MCVAR_portfolio = do_optimize(mu, cov, alpha, return_target, cost, prices, risk_tolerance)
     MCVAR_shares = (portfolio_values['MCVAR'].iloc[-1] / test_prices.iloc[0]).multiply(MCVAR_portfolio)
     MCVAR_values = pd.DataFrame((test_prices * MCVAR_shares).sum(axis=1), columns=["MCVAR"])
@@ -187,7 +194,7 @@ while test_start < len(f5) and not done:
 
 
     # Sharpe optimization
-    risk_tolerance = (multipliers, (0, 0.55), cardinality, 'SHARPE')
+    risk_tolerance = (multipliers, exposures, cardinality, 'SHARPE')
     SHARPE_portfolio = do_optimize(mu, cov, alpha, return_target, cost, prices, risk_tolerance)
     SHARPE_shares = (portfolio_values['SHARPE'].iloc[-1] / test_prices.iloc[0]).multiply(SHARPE_portfolio)
     SHARPE_values = pd.DataFrame((test_prices * SHARPE_shares).sum(axis=1), columns=["SHARPE"])
@@ -197,7 +204,7 @@ while test_start < len(f5) and not done:
                                                         columns=tickers))
 
     # MVO optimization
-    risk_tolerance = (multipliers, (0.0, 0.55), cardinality, 'MVO')
+    risk_tolerance = (multipliers, exposures, cardinality, 'MVO')
     MVO_portfolio = do_optimize(mu, cov, alpha, return_target, cost, prices, risk_tolerance)
     MVO_shares = (portfolio_values['MVO'].iloc[-1] / test_prices.iloc[0]).multiply(MVO_portfolio)
     MVO_values = pd.DataFrame((test_prices * MVO_shares).sum(axis=1), columns=['MVO'])
@@ -215,9 +222,18 @@ while test_start < len(f5) and not done:
                                                     index=test_prices.index,
                                                     columns=tickers))
 
+    # RISK PARITY Equal RISK PARITY  contribution
+    risk_tolerance = (multipliers, (0, exposures[1]), cardinality, 'PARITY')
+    RP_portfolio = do_optimize(mu, cov, alpha, return_target, cost, prices, risk_tolerance)
+    RP_shares = (portfolio_values['N'].iloc[-1] / test_prices.iloc[0]).multiply(RP_portfolio)
+    RP_values = pd.DataFrame((test_prices * RP_shares).sum(axis=1), columns=["N"])
+    RP_holdings = RP_holdings.append(pd.DataFrame(np.tile(RP_shares,
+                                                        (len(test_prices.index), 1)),
+                                                    index=test_prices.index,
+                                                    columns=tickers))
+
     # all the values of the portfolio
-    test = pd.concat([MCVAR_values, SHARPE_values, MVO_values, N_values], axis=1)
-    portfolio_values = portfolio_values.append(pd.concat([MCVAR_values, SHARPE_values, MVO_values, N_values], axis=1))
+    portfolio_values = portfolio_values.append(pd.concat([MCVAR_values, SHARPE_values, MVO_values, N_values, RP_values], axis=1))
 
     # update to next period
     sample_end = test_end
@@ -234,7 +250,13 @@ MCVAR_holdings.to_csv(os.getcwd() + r'/data/VALIDATE/MCVAR_HOLDINGS_{}.csv'.form
 SHARPE_holdings.to_csv(os.getcwd() + r'/data/VALIDATE/SHARPE_HOLDINGS_{}.csv'.format(rs))
 MVO_holdings.to_csv(os.getcwd() + r'/data/VALIDATE/MVO_HOLDINGS_{}.csv'.format(rs))
 N_holdings.to_csv(os.getcwd() + r'/data/VALIDATE/N_HOLDINGS_{}.csv'.format(rs))
+RP_holdings.to_csv(os.getcwd() + r'/data/VALIDATE/RP_HOLDINGS_{}.csv'.format(rs))
 
 
-
-
+# we dont need ot run it again
+# rs = True
+# portfolio_values = pd.read_csv(os.getcwd() + r'/data/VALIDATE/{}/PORTFOLIO_RETURNS_{}.csv'.format('rs' if rs else 'no_rs', rs), index_col=0)
+# MCVAR_holdings = pd.read_csv(os.getcwd() + r'/data/VALIDATE/{}/MCVAR_HOLDINGS_{}.csv'.format('rs' if rs else 'no_rs', rs), index_col=0)
+# SHARPE_holdings = pd.read_csv(os.getcwd() + r'/data/VALIDATE/{}/SHARPE_HOLDINGS_{}.csv'.format('rs' if rs else 'no_rs', rs), index_col=0)
+# MVO_holdings = pd.read_csv(os.getcwd() + r'/data/VALIDATE/{}/MVO_HOLDINGS_{}.csv'.format('rs' if rs else 'no_rs', rs), index_col=0)
+# N_holdings = pd.read_csv(os.getcwd() + r'/data/VALIDATE/{}/N_HOLDINGS_{}.csv'.format('rs' if rs else 'no_rs', rs), index_col=0)

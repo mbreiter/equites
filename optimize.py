@@ -37,17 +37,22 @@ def optimize(mu, sigma, alpha, return_target, costs, prices, gamma):
 
     # period one constraints
     budget1 = make_constraint('eq', budget_p1, (1, ))
-    target1 = make_constraint('ineq', return_p1, (mu[0], return_target[0], ))
+    target1 = make_constraint('ineq', return_p1, (mu[0], return_target[0], gamma[3],  ))
 
     # period two contraints
     budget2 = make_constraint('eq', budget_p2, (1, ))
-    target2 = make_constraint('ineq', return_p2, (mu[1], return_target[1], ))
+    target2 = make_constraint('ineq', return_p2, (mu[1], return_target[1], gamma[3], ))
+
+    if gamma[3] == "PARITY":
+        constraints = [target1, target2]
+    else:
+        constraints = [budget1, budget2, target1, target2]
 
     soln = minimize(objective, x0,
                     args=(mu, sigma, gamma[0], alpha, costs, prices, gamma[3]),
                     method='SLSQP',
                     bounds=bounds,
-                    constraints=[budget1, budget2, target1, target2])
+                    constraints=constraints)
 
     if soln.success:
         print("SUCCESS: optimization completed with the return goals met!")
@@ -58,14 +63,19 @@ def optimize(mu, sigma, alpha, return_target, costs, prices, gamma):
         print("\n\nWARNING: the return targets are too aggressive for the risk tolerance level ...")
 
         # SAFE SOLUTION ... just try to get a positive return
-        target1 = make_constraint('ineq', return_p1, (mu[0], 0,))
-        target2 = make_constraint('ineq', return_p2, (mu[1], 0,))
+        target1 = make_constraint('ineq', return_p1, (mu[0], 0, gamma[3]))
+        target2 = make_constraint('ineq', return_p2, (mu[1], 0, gamma[3]))
+
+        if gamma[3] == "PARITY":
+            constraints = [target1, target2]
+        else:
+            constraints = [budget1, budget2, target1, target2]
 
         safe_soln = minimize(objective, x0,
                              args=(mu, sigma, gamma[0], alpha, costs, prices, gamma[3]),
                              method='SLSQP',
                              bounds=bounds,
-                             constraints=[budget1, budget2, target1, target2])
+                             constraints=constraints)
 
         # TARGET SOLUTION ... meet the target goals! Loosen those exposure tolerances!
         bounds = []
@@ -76,14 +86,19 @@ def optimize(mu, sigma, alpha, return_target, costs, prices, gamma):
         bounds *= 2
 
         # target constraints
-        target1 = make_constraint('ineq', return_p1, (mu[0], return_target[0],))
-        target2 = make_constraint('ineq', return_p2, (mu[1], return_target[1],))
+        target1 = make_constraint('ineq', return_p1, (mu[0], return_target[0], gamma[3], ))
+        target2 = make_constraint('ineq', return_p2, (mu[1], return_target[1], gamma[3], ))
+
+        if gamma[3] == "PARITY":
+            constraints = [target1, target2]
+        else:
+            constraints = [budget1, budget2, target1, target2]
 
         target_soln = minimize(objective, x0,
                                args=(mu, sigma, gamma[0], alpha, costs, prices, gamma[3]),
                                method='SLSQP',
                                bounds=bounds,
-                               constraints=[budget1, budget2, target1, target2])
+                               constraints=constraints)
 
         print("The safe portfolio is the closest to the target returns while respecting the risk exposure tolerance... \n")
         print("The target portfolio releases any risk exposure tolerances ... it's likely unreasonable so be careful! \n")
@@ -106,14 +121,22 @@ def objective(x, mu, sigma, gamma, alpha, costs, prices, risk_func):
         p2 = 2 * mu[1].T.dot(x2) - gamma[0] * psi * np.sqrt(x2.T.dot(sigma[1]).dot(x2))
 
     elif risk_func == "SHARPE":
-        p1 = mu[0].T.dot(x1) / np.sqrt(x1.T.dot(sigma[0]).dot(x1))
-        p2 = mu[1].T.dot(x2) / np.sqrt(x2.T.dot(sigma[1]).dot(x2))
+        p1 = (mu[0].T.dot(x1) - 0.01)/ np.sqrt(x1.T.dot(sigma[0]).dot(x1))
+        p2 = (mu[1].T.dot(x2) - 0.01)/ np.sqrt(x2.T.dot(sigma[1]).dot(x2))
 
     elif risk_func == "MVO":
         p1 = mu[0].T.dot(x1)
         p2 = mu[1].T.dot(x2)
+
+    elif risk_func == "PARITY":
+        p1 = 0.5 * gamma[0] * x1.dot(sigma[0]).dot(x1) - np.log(x1).sum()
+        p2 = 0.5 * gamma[0] * x2.dot(sigma[0]).dot(x2) - np.log(x2).sum()
+
     # transaction costs
-    t = costs.dot(np.multiply((x2 - x1), np.multiply(x1, prices)))
+    if risk_func == "PARITY":
+        t = costs.dot(np.multiply((x2/x2.sum() - x1/x1.sum()), np.multiply(x1/x1.sum(), prices)))
+    else:
+        t = costs.dot(np.multiply((x2 - x1), np.multiply(x1, prices)))
 
     return -1 * (p1 + p2 - gamma[1] * t)
 
@@ -126,9 +149,17 @@ def budget_p2(x, lev):
     return np.sum(x[int(len(x)/2):]) - lev
 
 
-def return_p1(x, mu, return_target):
-    return mu.T.dot(x[:int(len(x)/2)]) - return_target
+def return_p1(x, mu, return_target, risk_func):
+    if risk_func == "PARITY":
+        x1 = x[:int(len(x) / 2)]
+        x1 /= x1.sum()
+
+    return mu.T.dot(x1) - return_target
 
 
-def return_p2(x, mu, return_target):
-    return mu.T.dot(x[int(len(x)/2):]) - return_target
+def return_p2(x, mu, return_target, risk_func):
+    if risk_func == "PARITY":
+        x2 = x[int(len(x)/2):]
+        x2 /= x2.sum()
+
+    return mu.T.dot(x2) - return_target

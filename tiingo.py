@@ -4,7 +4,7 @@ import requests
 
 import pandas as pd
 
-TIINGO_KEY = '2e64578d69892c20fab750efe3ae9ed176f7c1af' #'6d2d79e31c7c1b6bae9be7e8986b4a5fe3ce5111'
+TIINGO_KEY = '6d2d79e31c7c1b6bae9be7e8986b4a5fe3ce5111'
 TIINGO_EOD = 'https://api.tiingo.com/tiingo/daily/%s/prices?startDate=%s&endDate=%s'
 
 def get_data(tickers, data_point, start_date, end_date, save=True, fail_safe=True):
