@@ -15,7 +15,7 @@ importlib-metadata==0.23
 jmespath==0.9.4
 joblib==0.14.0
 kiwisolver==1.1.0
-lxml==4.4.1
+lxml==4.6.3
 matplotlib==3.1.1
 more-itertools==7.2.0
 numpy==1.16.5
